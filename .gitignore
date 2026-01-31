@@ -1,0 +1,10 @@
+output
+.vscode
+__pycache__/
+*.pyc
+.env
+logs/
+checkpoints/
+.DS_Store
+multirun
+outputs
