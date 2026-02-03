@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 
 class SnapshotGlobalAttn(nn.Module):
+    '''
+    지역간의 정보를 attention 메커니즘을 통해 통합하는 모듈
+    '''
     def __init__(self, embedding_dim, nhead,**kwargs):
         super().__init__()
         self.nhead = nhead

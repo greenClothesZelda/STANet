@@ -8,3 +8,4 @@ checkpoints/
 .DS_Store
 multirun
 outputs
+data
