@@ -14,6 +14,7 @@ class TemporalAggregationModule(nn.Module):
         self.tanh = nn.Tanh()
         self.score_fc = nn.Linear(embedding_dim, embedding_dim, bias=False)
         self.value_fc = nn.Linear(embedding_dim, 1, bias=False)
+        self.output_dim = embedding_dim
     def forward(self, state):
         '''
         Docstring for forward
@@ -21,7 +22,7 @@ class TemporalAggregationModule(nn.Module):
         :param state: snapshot global attention 모듈의 출력 attn_output (B, N, T, Hidden_Size) 이미 다른 노드에서 영향받는 것이 반영된 상태
         '''
         B, N, T, _ = state.size()   
-        state = state.view(-1, state.size(2), state.size(3))  # (B*N, T, Hidden_Size)
+        state = state.contiguous().view(-1, state.size(2), state.size(3))  # (B*N, T, Hidden_Size)
         gru_out, _ = self.gru(state)  # (B*N, T, Hidden_Size)
         score = self.tanh(self.score_fc(gru_out))  # (B*N, T, Hidden_Size)
         score = self.value_fc(score).squeeze(-1)  # (B*N, T)

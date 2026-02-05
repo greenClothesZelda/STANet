@@ -1,1 +1,1 @@
-from .sta_dataset import STADataset
+from .sta_dataset import *

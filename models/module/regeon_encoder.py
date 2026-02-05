@@ -17,6 +17,7 @@ class POIEncoder(nn.Module):
         self.theta_z = nn.Parameter(torch.randn(num_poi_categories))
         self.theta_s = nn.Parameter(torch.randn(num_poi_categories))
         self.register_buffer('x_poi', x_poi) # (N, C)
+        self.output_dim = num_poi_categories
 
     def forward(self):
         if not self.activate:
@@ -35,7 +36,7 @@ class POIEncoder(nn.Module):
         return feat
     
 class RegeonEncoder(nn.Module):
-    def __init__(self, land_composition, POIEncoder, x_geo, **kwargs):
+    def __init__(self, land_composition, poi_encoder_model, x_geo, **kwargs):
         '''
         Docstring for __init__
         
@@ -45,13 +46,15 @@ class RegeonEncoder(nn.Module):
         '''
         super().__init__()
         self.activate = kwargs.get('activate', False)
-        self.register_buffer('land_x', torch.tensor(land_composition, dtype=torch.float32)) # N, C
-        self.poi_encoder = POIEncoder(**POIEncoder)
+        self.register_buffer('land_x', land_composition) # N, C
+        self.poi_encoder = poi_encoder_model
         self.register_buffer('x_geo', x_geo) # (N, 3) lat, lon, log(1+ area)
+        land_dim = land_composition.size(1)
+        poi_dim = getattr(self.poi_encoder, 'output_dim', poi_encoder_model.num_cats)
+        geo_dim = x_geo.size(1)
+        self.output_dim = land_dim + poi_dim + geo_dim
         
     def forward(self):
-        if not self.activate:
-            return torch.zeros_like(self.land_x.shape[0], self.land_x.shape[1] + self.x_geo.shape[1] + self.poi_encoder().shape[1])
         land_feat = self.land_x
         poi_feat = self.poi_encoder()
         geo_feat = self.x_geo

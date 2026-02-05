@@ -15,6 +15,7 @@ class SnapshotGlobalAttn(nn.Module):
         self.V_fc = nn.Linear(embedding_dim, embedding_dim, bias=False)
         self.scale = torch.sqrt(torch.FloatTensor([embedding_dim]))
         self.layer_norm = nn.LayerNorm(embedding_dim, eps=kwargs.get('layer_norm_eps', 1e-5))
+        self.output_dim = embedding_dim
     
     def forward(self, state, OD=None):
         '''
@@ -28,7 +29,7 @@ class SnapshotGlobalAttn(nn.Module):
         V = self.V_fc(state).view(B, T, N, self.nhead, self.head_dim).permute(0, 1, 3, 2, 4)  # (B, T, nhead, N, head_dim)
 
         attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale.to(state.device)  # (B, T, nhead, N, N)
-        #TODO OD bias 추가
+        #TODO OD bias 추가 #LLM 오류탐지(Section 3 Step3: OD 기반 bias 미반영으로 explain과 불일치)
         attn_weights = torch.softmax(attn_scores, dim=-1)  # (B, T, nhead, N, N)
         attn_output = torch.matmul(attn_weights, V)  # (B, T, nhead, N, head_dim)
         attn_output = attn_output.permute(0, 1, 3, 2, 4).contiguous().view(B, T, N, D) # (B, T, N, D)
