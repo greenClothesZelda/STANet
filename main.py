@@ -45,7 +45,7 @@ def build_model(config, dataset, device):
         [dataset.coordinates, dataset.areas.unsqueeze(1).log1p()], dim=-1).to(device)
     poi_conf = dict(config.model.POIEncoder)
     reg_conf = dict(config.model.RegeonEncoder)
-    dyn_conf = dict(config.model.DynamicEncoder)
+    dyn_conf = dict(config.model.LocalLagEncoder)
     temp_conf = dict(config.model.TemporalEncoder)
     tstate_conf = dict(config.model.TemporalStateModule)
     attn_conf = dict(config.model.SnapshotGlobalAttn)
@@ -62,7 +62,7 @@ def build_model(config, dataset, device):
             'x_geo': x_geo,
         },
         TemporalEncoder_configs={**temp_conf},
-        DynamicEncoder_configs={
+        LocalLagEncoder_configs={
             **dyn_conf,
             'time_step': config.dataset.time_step,
         },
@@ -71,7 +71,7 @@ def build_model(config, dataset, device):
         TemporalStateModule_configs={**tstate_conf},
     ).to(device)
 
-    return STANetForTrainer(stanet, lambda_mag=config.loss.lambda_mag)
+    return STANetForTrainer(stanet, **config.loss)
 
 
 def split_dataset_sequential(dataset, train_ratio):

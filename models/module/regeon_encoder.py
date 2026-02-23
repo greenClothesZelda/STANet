@@ -52,11 +52,13 @@ class RegeonEncoder(nn.Module):
         land_dim = land_composition.size(1)
         poi_dim = getattr(self.poi_encoder, 'output_dim', poi_encoder_model.num_cats)
         geo_dim = x_geo.size(1)
-        self.output_dim = land_dim + poi_dim + geo_dim
+        self.output_dim = kwargs.get('output_dim', land_dim + poi_dim + geo_dim)
+        self.output_layer = nn.Linear(land_dim + poi_dim + geo_dim, self.output_dim)
         
     def forward(self):
         land_feat = self.land_x
         poi_feat = self.poi_encoder()
         geo_feat = self.x_geo
         region_feat = torch.cat([land_feat, poi_feat, geo_feat], dim=1)
-        return region_feat # (N, land_C + poi_C + 3)
+        region_feat = self.output_layer(region_feat)
+        return region_feat
