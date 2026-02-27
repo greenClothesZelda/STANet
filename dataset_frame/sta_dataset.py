@@ -15,30 +15,44 @@ class STADataset(data.Dataset):
         self.coordinates = [[] for _ in range(self.num_nodes)]
         self.areas = [node['size'] for node in data['nodes']]
 
-        composition_keys = set()
+        # land_use composition
+        land_keys = set()
+        poi_keys = set()
         for node in data['nodes']:
-            for comp in node['composition']:
-                composition_keys.add(comp)
-        composition_keys = list(composition_keys)
+            land_use = node['composition'].get('land_use', {}) if isinstance(
+                node['composition'], dict) else {}
+            poi = node['composition'].get('poi', {}) if isinstance(
+                node['composition'], dict) else {}
+            land_keys.update(land_use.keys())
+            poi_keys.update(poi.keys())
+        land_keys = list(land_keys)
+        poi_keys = list(poi_keys)
 
-        self.comp_key_to_idx = {key: idx for idx,
-                                key in enumerate(composition_keys)}
-        self.comp_idx_to_key = {idx: key for idx,
-                                key in enumerate(composition_keys)}
+        self.land_key_to_idx = {key: idx for idx, key in enumerate(land_keys)}
+        self.poi_key_to_idx = {key: idx for idx, key in enumerate(poi_keys)}
 
         self.composition = [
-            [0 for _ in range(len(composition_keys))] for _ in range(len(data['nodes']))]
+            [0 for _ in range(len(land_keys))] for _ in range(self.num_nodes)]
+        self.poi = [[0 for _ in range(len(poi_keys))]
+                    for _ in range(self.num_nodes)]
 
         for node in data['nodes']:
             lat = node['lat']
             lon = node['lon']
-            self.coordinates[node['node_id']] = [lat, lon]
-            for comp in node['composition']:
-                comp_idx = self.comp_key_to_idx[comp]
-                self.composition[node['node_id']
-                                 ][comp_idx] = node['composition'][comp]
+            nid = node['node_id']
+            self.coordinates[nid] = [lat, lon]
+            land_use = node['composition'].get('land_use', {}) if isinstance(
+                node['composition'], dict) else {}
+            poi = node['composition'].get('poi', {}) if isinstance(
+                node['composition'], dict) else {}
+            for comp, val in land_use.items():
+                if comp in self.land_key_to_idx:
+                    self.composition[nid][self.land_key_to_idx[comp]] = val
+            for comp, val in poi.items():
+                if comp in self.poi_key_to_idx:
+                    self.poi[nid][self.poi_key_to_idx[comp]] = val
 
-        #print(f'x keys: {data["x"][0].keys()}')
+        # print(f'x keys: {data["x"][0].keys()}')
         day_to_idx = {'Mon': 0, 'Tue': 1, 'Wed': 2,
                       'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6}
         self.demands = []
@@ -68,6 +82,7 @@ class STADataset(data.Dataset):
         for i in range(1, self.demands.size(0)):
             self.deactivation_period[i] = torch.where(
                 self.demands[i-1] == 0, self.deactivation_period[i-1] + 1, torch.zeros_like(self.deactivation_period[i-1]))
+       # print(f'compositions {self.composition}')
         # metadata
         self.coordinates = torch.tensor(self.coordinates, dtype=torch.float)
         self.composition = torch.tensor(self.composition, dtype=torch.float)
@@ -81,22 +96,28 @@ class STADataset(data.Dataset):
         self.coordinates = (self.coordinates -
                             mean_coords) / (std_coords + eps)
         # 구역
-        max_composition, _ = torch.max(self.composition, dim=0)
-        self.composition = self.composition / (max_composition + eps)
+        if self.composition.numel() > 0:
+            max_composition, _ = torch.max(self.composition, dim=0)
+            self.composition = self.composition / (max_composition + eps)
+        # poi
+        self.poi = torch.tensor(self.poi, dtype=torch.float)
+        if self.poi.numel() > 0:
+            max_poi, _ = torch.max(self.poi, dim=0)
+            self.poi = self.poi / (max_poi + eps)
         # 면적
         mean_area = torch.mean(self.areas)
         std_area = torch.std(self.areas)
         self.areas = (self.areas - mean_area) / (std_area + eps)
 
     def __len__(self):
-        return len(self.demands) - self.time_step
+        return len(self.demands) - self.time_step 
 
     def __getitem__(self, idx):
         return {
             'demand_features': {
                 # (N, 1)
-                    # use last timestep in window; avoid out-of-bounds at sequence end
-                    'deactivation_period': self.deactivation_period[idx + self.time_step].unsqueeze(1),
+                # use last timestep in window; avoid out-of-bounds at sequence end
+                'deactivation_period': self.deactivation_period[idx + self.time_step - 1].unsqueeze(1),
                 # (N, T)
                 'demand_series': self.demands[idx:idx + self.time_step].transpose(0, 1),
                 # (N, T)

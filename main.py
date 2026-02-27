@@ -13,6 +13,7 @@ from models import STANet, STANetForTrainer
 from runners.test import test_loop
 
 log = logging.getLogger(__name__)
+results = []
 
 
 def set_seed(seed):
@@ -50,11 +51,15 @@ def build_model(config, dataset, device):
     tstate_conf = dict(config.model.TemporalStateModule)
     attn_conf = dict(config.model.SnapshotGlobalAttn)
 
+    # override POI category count with data-driven value
+    poi_conf['num_poi_categories'] = dataset.poi.shape[1] if hasattr(
+        dataset, 'poi') else poi_conf.get('num_poi_categories', 0)
+
     stanet = STANet(
         embedding_dim=config.model.embedding_dim,
         POIEncoder_configs={
             **poi_conf,
-            'x_poi': torch.zeros((num_nodes, poi_conf['num_poi_categories']), device=device),
+            'x_poi': dataset.poi.to(device),
         },
         RegeonEncoder_configs={
             **reg_conf,
@@ -69,6 +74,7 @@ def build_model(config, dataset, device):
         SnapshotGlobalAttn_configs={**attn_conf},
         TemporalAggregationModule_configs={},
         TemporalStateModule_configs={**tstate_conf},
+        PTReLU_configs=dict(config.model.PTReLU),
     ).to(device)
 
     return STANetForTrainer(stanet, **config.loss)
@@ -127,8 +133,10 @@ def run(config):
     metrics = trainer.evaluate()
     log.info(metrics)
 
-    test_loop(trainer, val_ds, output_dir)
+    result = test_loop(trainer, val_ds, output_dir)
+    results.append(result)
 
 
 if __name__ == "__main__":
     run()
+    log.info(f"All runs finished. Results: {results}")

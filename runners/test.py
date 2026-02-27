@@ -16,6 +16,10 @@ def test_loop(trainer, test_dataset, output_dir):
     output = trainer.predict(test_dataset)
 
     preds = output.predictions
+    
+    logits, event_prob, magnitude, prediction = preds
+    #log.info(f"Logits shape: {logits.shape}, Event Prob shape: {event_prob.shape}, Magnitude shape: {magnitude.shape}, Prediction shape: {prediction.shape}")
+
     if isinstance(preds, tuple):
         preds = preds[0]
     labels = output.label_ids
@@ -43,7 +47,16 @@ def test_loop(trainer, test_dataset, output_dir):
     visualize_predictions(result_csv_path, num_nodes, output_dir)
 
     log.info(f"Test Finished. MAE: {mae:.4f}, MAPE: {mape:.4f}")
-    return {'MAE': mae, 'MAPE': mape}
+    
+    event_target = (labels > 0)
+    event_acc = {}
+    for thresh in [0.3, 0.5, 0.7, 0.9]:
+        pred_event = (event_prob > thresh)
+        correct = (pred_event == event_target).astype(float)
+        acc = correct.mean()
+        event_acc[f'acc@{thresh}'] = acc
+    log.info(f"Event Acc: {event_acc}")
+    return {'MAE': mae, 'MAPE': mape,} #'event_acc': event_acc}
 
 
 def visualize_predictions(csv_path, num_nodes, output_dir):
@@ -58,7 +71,7 @@ def visualize_predictions(csv_path, num_nodes, output_dir):
     demand_sum = np.sum(labels, axis=1) / num_nodes
     mean = np.mean(diff, axis=1)
 
-    plt.figure(figsize=(24, 16))
+    plt.figure(figsize=(24, 5))
     plt.plot(demand_sum, label='Average Demand', color='black')
     plt.plot(mean, label='Mean of Absolute Error', color='red')
     plt.xlabel('Time Step')
@@ -85,7 +98,7 @@ def visualize_sample(pred, labels, output_dir, name):
     pred = np.array(pred)
     labels = np.array(labels)
 
-    plt.figure(figsize=(24, 16))
+    plt.figure(figsize=(24, 5))
     plt.plot(labels, label='Labels', color='black')
     plt.plot(pred, label='Predictions', color='red')
     plt.xlabel('Time Step')

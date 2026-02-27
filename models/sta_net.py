@@ -2,12 +2,34 @@ import torch
 import torch.nn as nn
 from models.module import *
 
+class PTReLU(nn.Module):
+    def __init__(self, alpha=1.0, n=3.0):
+        super(PTReLU, self).__init__()
+        self.alpha = alpha
+        self.n = n
+
+    def forward(self, x):
+        # x <= 0: 0
+        # 0 < x <= alpha: (1 / alpha^(n-1)) * x^n
+        # x > alpha: x
+        
+        out = torch.zeros_like(x)
+        
+        mask1 = (x > 0) & (x <= self.alpha)
+        mask2 = (x > self.alpha)
+        
+        out[mask1] = (1.0 / (self.alpha ** (self.n - 1))) * (x[mask1] ** self.n)
+        out[mask2] = x[mask2]
+        
+        return out
+
 
 class STANet(nn.Module):
     def __init__(self,
                  POIEncoder_configs, RegeonEncoder_configs, TemporalEncoder_configs,
                  TemporalStateModule_configs, LocalLagEncoder_configs, embedding_dim,
-                 SnapshotGlobalAttn_configs, TemporalAggregationModule_configs, **kwargs):
+                 SnapshotGlobalAttn_configs, TemporalAggregationModule_configs, PTReLU_configs,
+                 **kwargs):
         super().__init__()
         # 입력데이터 embedding 모듈들
         poi_encoder = POIEncoder(**POIEncoder_configs)
@@ -32,6 +54,8 @@ class STANet(nn.Module):
             **TemporalAggregationModule_configs, embedding_dim=embedding_dim)
         self.event_head = nn.Linear(embedding_dim, 1)
         self.magnitude_head = nn.Linear(embedding_dim, 1)
+        
+        self.ptRelu = PTReLU(alpha=PTReLU_configs.get('alpha', 0.5), n=PTReLU_configs.get('n', 5.0))
 
     def forward(self, demand_features, temporal_features):
         region_features = self.regeion_encoder()  # (N, D_region)
@@ -65,7 +89,7 @@ class STANet(nn.Module):
             self.event_head(state)).squeeze(-1)  # (B, N)
         magnitude = torch.nn.functional.softplus(
             self.magnitude_head(state)).squeeze(-1)  # (B, N)
-        prediction = event_prob * magnitude  # (B, N)
+        prediction = self.ptRelu(event_prob) * magnitude  # (B, N)
         return {
             'event_prob': event_prob,
             'magnitude': magnitude,

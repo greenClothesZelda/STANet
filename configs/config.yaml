@@ -26,6 +26,9 @@ model:
     GRU_configs:
       num_layers: 2
       dropout: 0.3
+  PTReLU:
+    alpha: 0.7
+    n: 5.0
 
 loss:
   lambda_mag: 0.8

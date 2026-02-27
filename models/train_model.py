@@ -13,10 +13,10 @@ class DMVSTLoss(nn.Module):
         self.reduction = reduction
     def forward(self, y_pred, y_true):
         diff = y_true - y_pred
-        term1 = diff ** 2
+        term1 = torch.abs(diff)
 
         relative_diff = diff / (y_true + self.eps)
-        term2 = relative_diff ** 2
+        term2 = torch.abs(relative_diff)
         loss = term1 + (self.gamma * term2)
 
         if self.reduction == 'mean':
@@ -24,6 +24,8 @@ class DMVSTLoss(nn.Module):
         elif self.reduction == 'sum':
             loss = loss.sum()
         return loss
+    
+
 
 class STANetForTrainer(nn.Module):
     """Wrapper that adds loss computation for Hugging Face Trainer."""
@@ -46,11 +48,11 @@ class STANetForTrainer(nn.Module):
         logits = outputs['prediction']  # (B, N)
 
         loss = None
+        event_prob = outputs['event_prob']
+        magnitude = outputs['magnitude']
         if labels is not None:
             labels = labels.float()
             event_target = (labels > 0).float()
-            event_prob = outputs['event_prob']
-            magnitude = outputs['magnitude']
 
             event_loss = F.binary_cross_entropy(event_prob, event_target)
             pos_mask = event_target > 0
