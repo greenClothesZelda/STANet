@@ -10,7 +10,7 @@ from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
 
 from dataset_frame.sta_dataset import STADataset, stad_collate_fn
 from models import STANet, STANetForTrainer
-from runners.test import test_loop
+from runners import test_loop, visualize_label_distribution_comparison
 
 log = logging.getLogger(__name__)
 results = []
@@ -106,9 +106,11 @@ def run(config):
     train_ds, val_ds = split_dataset_sequential(
         dataset, config.dataset.train_ratio)
 
+    output_dir = HydraConfig.get().runtime.output_dir
+    visualize_label_distribution_comparison(train_ds, val_ds, output_dir)
+
     model = build_model(config, dataset, device)
 
-    output_dir = HydraConfig.get().runtime.output_dir
     training_kwargs = {**dict(config.train)}
     if 'eval_strategy' in training_kwargs:
         training_kwargs['eval_strategy'] = training_kwargs.pop(

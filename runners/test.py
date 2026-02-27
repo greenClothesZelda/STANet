@@ -16,9 +16,9 @@ def test_loop(trainer, test_dataset, output_dir):
     output = trainer.predict(test_dataset)
 
     preds = output.predictions
-    
+
     logits, event_prob, magnitude, prediction = preds
-    #log.info(f"Logits shape: {logits.shape}, Event Prob shape: {event_prob.shape}, Magnitude shape: {magnitude.shape}, Prediction shape: {prediction.shape}")
+    # log.info(f"Logits shape: {logits.shape}, Event Prob shape: {event_prob.shape}, Magnitude shape: {magnitude.shape}, Prediction shape: {prediction.shape}")
 
     if isinstance(preds, tuple):
         preds = preds[0]
@@ -45,9 +45,10 @@ def test_loop(trainer, test_dataset, output_dir):
     result_df.to_csv(result_csv_path, index=False)
 
     visualize_predictions(result_csv_path, num_nodes, output_dir)
+    visualize_strip_chart(preds, labels, output_dir)
 
     log.info(f"Test Finished. MAE: {mae:.4f}, MAPE: {mape:.4f}")
-    
+
     event_target = (labels > 0)
     event_acc = {}
     for thresh in [0.3, 0.5, 0.7, 0.9]:
@@ -56,7 +57,7 @@ def test_loop(trainer, test_dataset, output_dir):
         acc = correct.mean()
         event_acc[f'acc@{thresh}'] = acc
     log.info(f"Event Acc: {event_acc}")
-    return {'MAE': mae, 'MAPE': mape,} #'event_acc': event_acc}
+    return {'MAE': mae, 'MAPE': mape, }  # 'event_acc': event_acc}
 
 
 def visualize_predictions(csv_path, num_nodes, output_dir):
@@ -106,4 +107,28 @@ def visualize_sample(pred, labels, output_dir, name):
     plt.title(f'Predictions vs Labels for Sample Node: {name}')
     plt.legend()
     plt.savefig(Path(output_dir) / f"predictions_{name}.png")
+    plt.close()
+
+
+def visualize_strip_chart(preds, labels, output_dir):
+    """
+    Visualizes the distribution of predicted values for each ground truth label value.
+    Creates a strip chart (scatter plot with jitter).
+    """
+    preds = preds.flatten()
+    labels = labels.flatten()
+
+    plt.figure(figsize=(12, 8))
+
+    # Add random jitter to labels for better visualization of density
+    jitter = np.random.uniform(-0.2, 0.2, size=labels.shape)
+
+    plt.scatter(labels + jitter, preds, alpha=0.1, s=2, color='blue')
+
+    plt.xlabel('Actual Demand (Label)')
+    plt.ylabel('Predicted Demand')
+    plt.title('Prediction Distribution per Label (Strip Chart)')
+    plt.grid(True, linestyle='--', alpha=0.5)
+
+    plt.savefig(Path(output_dir) / "label_prediction_strip_chart.png")
     plt.close()
