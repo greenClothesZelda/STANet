@@ -11,6 +11,7 @@ from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
 from dataset_frame.sta_dataset import STADataset, stad_collate_fn
 from models import STANet, STANetForTrainer
 from runners import test_loop, visualize_label_distribution_comparison
+from models.attn import get_attn_module
 
 log = logging.getLogger(__name__)
 results = []
@@ -51,6 +52,11 @@ def build_model(config, dataset, device):
     tstate_conf = dict(config.model.TemporalStateModule)
     attn_conf = dict(config.model.SnapshotGlobalAttn)
 
+    # Get attention module from config
+    attn_name = config.model.attention.name
+    attn_module = get_attn_module(attn_name)
+    attn_configs = dict(config.model.attention.get('configs', {}))
+
     # override POI category count with data-driven value
     poi_conf['num_poi_categories'] = dataset.poi.shape[1] if hasattr(
         dataset, 'poi') else poi_conf.get('num_poi_categories', 0)
@@ -75,6 +81,8 @@ def build_model(config, dataset, device):
         TemporalAggregationModule_configs={},
         TemporalStateModule_configs={**tstate_conf},
         PTReLU_configs=dict(config.model.PTReLU),
+        attn_module=attn_module,
+        attn_configs=attn_configs,
     ).to(device)
 
     return STANetForTrainer(stanet, **config.loss)

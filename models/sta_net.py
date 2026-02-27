@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from models.module import *
 
+
 class PTReLU(nn.Module):
     def __init__(self, alpha=1.0, n=3.0):
         super(PTReLU, self).__init__()
@@ -12,15 +13,16 @@ class PTReLU(nn.Module):
         # x <= 0: 0
         # 0 < x <= alpha: (1 / alpha^(n-1)) * x^n
         # x > alpha: x
-        
+
         out = torch.zeros_like(x)
-        
+
         mask1 = (x > 0) & (x <= self.alpha)
         mask2 = (x > self.alpha)
-        
-        out[mask1] = (1.0 / (self.alpha ** (self.n - 1))) * (x[mask1] ** self.n)
+
+        out[mask1] = (1.0 / (self.alpha ** (self.n - 1))) * \
+            (x[mask1] ** self.n)
         out[mask2] = x[mask2]
-        
+
         return out
 
 
@@ -28,7 +30,7 @@ class STANet(nn.Module):
     def __init__(self,
                  POIEncoder_configs, RegeonEncoder_configs, TemporalEncoder_configs,
                  TemporalStateModule_configs, LocalLagEncoder_configs, embedding_dim,
-                 SnapshotGlobalAttn_configs, TemporalAggregationModule_configs, PTReLU_configs,
+                 SnapshotGlobalAttn_configs, TemporalAggregationModule_configs, PTReLU_configs, attn_module, attn_configs,
                  **kwargs):
         super().__init__()
         # 입력데이터 embedding 모듈들
@@ -49,13 +51,18 @@ class STANet(nn.Module):
         self.temporal_state_module = TemporalStateModule(
             **TemporalStateModule_configs, input_size=embedding_dim)
         self.spatial_module = SnapshotGlobalAttn(
-            **SnapshotGlobalAttn_configs, embedding_dim=embedding_dim)
+            **SnapshotGlobalAttn_configs, embedding_dim=embedding_dim,
+            attn_module=attn_module, attn_configs=attn_configs
+        )
         self.temporal_aggregation_module = TemporalAggregationModule(
-            **TemporalAggregationModule_configs, embedding_dim=embedding_dim)
+            **TemporalAggregationModule_configs, embedding_dim=embedding_dim,
+            nhead=SnapshotGlobalAttn_configs['nhead'], attn_module=attn_module, attn_configs=attn_configs
+        )
         self.event_head = nn.Linear(embedding_dim, 1)
         self.magnitude_head = nn.Linear(embedding_dim, 1)
-        
-        self.ptRelu = PTReLU(alpha=PTReLU_configs.get('alpha', 0.5), n=PTReLU_configs.get('n', 5.0))
+
+        self.ptRelu = PTReLU(alpha=PTReLU_configs.get(
+            'alpha', 0.5), n=PTReLU_configs.get('n', 5.0))
 
     def forward(self, demand_features, temporal_features):
         region_features = self.regeion_encoder()  # (N, D_region)

@@ -13,7 +13,7 @@ class DMVSTLoss(nn.Module):
         self.reduction = reduction
     def forward(self, y_pred, y_true):
         diff = y_true - y_pred
-        term1 = torch.abs(diff)
+        term1 = diff ** 2
 
         relative_diff = diff / (y_true + self.eps)
         term2 = torch.abs(relative_diff)
