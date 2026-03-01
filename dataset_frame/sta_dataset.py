@@ -7,22 +7,22 @@ import json
 class STADataset(data.Dataset):
     def __init__(self, file_name, time_step=8, root=None):
         self.time_step = time_step
-        root = Path(root) if root is not None else Path('./data/raw')
+        root = Path(root) if root is not None else Path("./data/raw")
         data_path = root / file_name
-        with open(data_path, 'r') as f:
+        with open(data_path, "r") as f:
             data = json.load(f)
-        self.num_nodes = len(data['nodes'])
+        self.num_nodes = len(data["nodes"])
         self.coordinates = [[] for _ in range(self.num_nodes)]
-        self.areas = [node['size'] for node in data['nodes']]
+        self.areas = [node["size"] for node in data["nodes"]]
 
         # land_use composition
         land_keys = set()
         poi_keys = set()
-        for node in data['nodes']:
-            land_use = node['composition'].get('land_use', {}) if isinstance(
-                node['composition'], dict) else {}
-            poi = node['composition'].get('poi', {}) if isinstance(
-                node['composition'], dict) else {}
+        for node in data["nodes"]:
+            land_use = node["composition"].get("land_use", {}) if isinstance(
+                node["composition"], dict) else {}
+            poi = node["composition"].get("poi", {}) if isinstance(
+                node["composition"], dict) else {}
             land_keys.update(land_use.keys())
             poi_keys.update(poi.keys())
         land_keys = list(land_keys)
@@ -36,15 +36,15 @@ class STADataset(data.Dataset):
         self.poi = [[0 for _ in range(len(poi_keys))]
                     for _ in range(self.num_nodes)]
 
-        for node in data['nodes']:
-            lat = node['lat']
-            lon = node['lon']
-            nid = node['node_id']
+        for node in data["nodes"]:
+            lat = node["lat"]
+            lon = node["lon"]
+            nid = node["node_id"]
             self.coordinates[nid] = [lat, lon]
-            land_use = node['composition'].get('land_use', {}) if isinstance(
-                node['composition'], dict) else {}
-            poi = node['composition'].get('poi', {}) if isinstance(
-                node['composition'], dict) else {}
+            land_use = node["composition"].get("land_use", {}) if isinstance(
+                node["composition"], dict) else {}
+            poi = node["composition"].get("poi", {}) if isinstance(
+                node["composition"], dict) else {}
             for comp, val in land_use.items():
                 if comp in self.land_key_to_idx:
                     self.composition[nid][self.land_key_to_idx[comp]] = val
@@ -52,104 +52,109 @@ class STADataset(data.Dataset):
                 if comp in self.poi_key_to_idx:
                     self.poi[nid][self.poi_key_to_idx[comp]] = val
 
-        # print(f'x keys: {data["x"][0].keys()}')
-        day_to_idx = {'Mon': 0, 'Tue': 1, 'Wed': 2,
-                      'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6}
+        day_to_idx = {"Mon": 0, "Tue": 1, "Wed": 2,
+                      "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
         self.demands = []
-        self.temporal_features = []
         days = []
         times = []
         holidays = []
-        for series in data['x']:
-            demand = series['demand']
-            day = series['day']
-            time = series['time']
-            holiday = series['holiday']
+        for series in data["x"]:
+            demand = series["demand"]
+            day = series["day"]
+            time = series["time"]
+            holiday = series["holiday"]
             self.demands.append(demand)
             days.append(day_to_idx[day])
             times.append(time)
             holidays.append(1 if holiday else 0)
 
-        # tensor로 변환
         self.demands = torch.tensor(self.demands, dtype=torch.long)
         self.temporal_features = {
-            'day_of_week': torch.tensor(days, dtype=torch.long),
-            'hour_of_day': torch.tensor(times, dtype=torch.long),
-            'is_holiday': torch.tensor(holidays, dtype=torch.long)
+            "dow": torch.tensor(days, dtype=torch.long),
+            "hod": torch.tensor(times, dtype=torch.long),
+            "holiday": torch.tensor(holidays, dtype=torch.long),
         }
-        self.deactivation_period = torch.zeros_like(
-            self.demands, dtype=torch.float)
+        # Legacy aliases kept for backward compatibility.
+        self.temporal_features["day_of_week"] = self.temporal_features["dow"]
+        self.temporal_features["hour_of_day"] = self.temporal_features["hod"]
+        self.temporal_features["is_holiday"] = self.temporal_features["holiday"]
+
+        self.delta_t_last = torch.zeros_like(self.demands, dtype=torch.float)
         for i in range(1, self.demands.size(0)):
-            self.deactivation_period[i] = torch.where(
-                self.demands[i-1] == 0, self.deactivation_period[i-1] + 1, torch.zeros_like(self.deactivation_period[i-1]))
-       # print(f'compositions {self.composition}')
-        # metadata
+            self.delta_t_last[i] = torch.where(
+                self.demands[i - 1] == 0,
+                self.delta_t_last[i - 1] + 1,
+                torch.zeros_like(self.delta_t_last[i - 1]),
+            )
+        self.deactivation_period = self.delta_t_last
+
         self.coordinates = torch.tensor(self.coordinates, dtype=torch.float)
         self.composition = torch.tensor(self.composition, dtype=torch.float)
         self.areas = torch.tensor(self.areas, dtype=torch.float)
 
-        # 각종 정규화 나중에 삭제할수도?
-        # 좌표
         eps = 1e-6
         mean_coords = torch.mean(self.coordinates, dim=0)
         std_coords = torch.std(self.coordinates, dim=0)
         self.coordinates = (self.coordinates -
                             mean_coords) / (std_coords + eps)
-        # 구역
         if self.composition.numel() > 0:
             max_composition, _ = torch.max(self.composition, dim=0)
             self.composition = self.composition / (max_composition + eps)
-        # poi
         self.poi = torch.tensor(self.poi, dtype=torch.float)
         if self.poi.numel() > 0:
             max_poi, _ = torch.max(self.poi, dim=0)
             self.poi = self.poi / (max_poi + eps)
-        # 면적
         mean_area = torch.mean(self.areas)
         std_area = torch.std(self.areas)
         self.areas = (self.areas - mean_area) / (std_area + eps)
 
     def __len__(self):
-        return len(self.demands) - self.time_step 
+        return len(self.demands) - self.time_step
 
     def __getitem__(self, idx):
+        delta_t_last = self.delta_t_last[idx + self.time_step - 1].unsqueeze(1)
+        y_lag = self.demands[idx:idx + self.time_step].transpose(0, 1)
+        m_lag = torch.ones_like(y_lag)
+        dow = self.temporal_features["dow"][idx:idx + self.time_step]
+        hod = self.temporal_features["hod"][idx:idx + self.time_step]
+        holiday = self.temporal_features["holiday"][idx:idx + self.time_step]
+
         return {
-            'demand_features': {
-                # (N, 1)
-                # use last timestep in window; avoid out-of-bounds at sequence end
-                'deactivation_period': self.deactivation_period[idx + self.time_step - 1].unsqueeze(1),
-                # (N, T)
-                'demand_series': self.demands[idx:idx + self.time_step].transpose(0, 1),
-                # (N, T)
-                'valid_mask': torch.ones_like(self.demands[idx:idx + self.time_step].transpose(0, 1)),
+            "demand_features": {
+                "delta_t_last": delta_t_last,
+                "y_lag": y_lag,
+                "m_lag": m_lag,
+                "deactivation_period": delta_t_last,
+                "demand_series": y_lag,
+                "valid_mask": m_lag,
             },
-            'temporal_features': {
-                # (T,)
-                'day_of_week': self.temporal_features['day_of_week'][idx:idx + self.time_step],
-                # (T,)
-                'hour_of_day': self.temporal_features['hour_of_day'][idx:idx + self.time_step],
-                # (T,)
-                'is_holiday': self.temporal_features['is_holiday'][idx:idx + self.time_step],
+            "temporal_features": {
+                "dow": dow,
+                "hod": hod,
+                "holiday": holiday,
+                "day_of_week": dow,
+                "hour_of_day": hod,
+                "is_holiday": holiday,
             },
-            'labels': self.demands[idx + self.time_step]  # (N,)
+            "labels": self.demands[idx + self.time_step],  # (N,)
         }
 
 
 def stad_collate_fn(batch):
     """Collate function for Hugging Face Trainer batches."""
     demand_features = {
-        key: torch.stack([sample['demand_features'][key]
+        key: torch.stack([sample["demand_features"][key]
                          for sample in batch], dim=0)
-        for key in batch[0]['demand_features']
+        for key in batch[0]["demand_features"]
     }
     temporal_features = {
-        key: torch.stack([sample['temporal_features'][key]
+        key: torch.stack([sample["temporal_features"][key]
                          for sample in batch], dim=0)
-        for key in batch[0]['temporal_features']
+        for key in batch[0]["temporal_features"]
     }
-    labels = torch.stack([sample['labels'] for sample in batch], dim=0)
+    labels = torch.stack([sample["labels"] for sample in batch], dim=0)
     return {
-        'demand_features': demand_features,
-        'temporal_features': temporal_features,
-        'labels': labels,
+        "demand_features": demand_features,
+        "temporal_features": temporal_features,
+        "labels": labels,
     }

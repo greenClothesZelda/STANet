@@ -5,26 +5,25 @@ from typing import Optional, Dict, Any
 
 from .sta_net import STANet
 
+
 class DMVSTLoss(nn.Module):
-    def __init__(self, gamma=1.0, eps=1.0, reduction='mean'):
+    def __init__(self, gamma=1.0, eps=1.0, reduction="mean"):
         super().__init__()
         self.gamma = gamma
         self.eps = eps
         self.reduction = reduction
+
     def forward(self, y_pred, y_true):
         diff = y_true - y_pred
         term1 = torch.abs(diff)
-
         relative_diff = diff / (y_true + self.eps)
         term2 = torch.abs(relative_diff)
         loss = term1 + (self.gamma * term2)
-
-        if self.reduction == 'mean':
+        if self.reduction == "mean":
             loss = loss.mean()
-        elif self.reduction == 'sum':
+        elif self.reduction == "sum":
             loss = loss.sum()
         return loss
-    
 
 
 class STANetForTrainer(nn.Module):
@@ -34,7 +33,11 @@ class STANetForTrainer(nn.Module):
         super().__init__()
         self.stanet = stanet
         self.lambda_mag = lambda_mag
-        self.magnitude_loss_fn = DMVSTLoss(gamma=kwargs.get('gamma', 1.0), eps=kwargs.get('eps', 1.0), reduction=kwargs.get('reduction', 'mean'))
+        self.magnitude_loss_fn = DMVSTLoss(
+            gamma=kwargs.get("gamma", 1.0),
+            eps=kwargs.get("eps", 1.0),
+            reduction=kwargs.get("reduction", "mean"),
+        )
 
     def forward(
         self,
@@ -43,29 +46,35 @@ class STANetForTrainer(nn.Module):
         labels: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> Dict[str, torch.Tensor]:
-        outputs = self.stanet(demand_features=demand_features,
-                              temporal_features=temporal_features)
-        logits = outputs['prediction']  # (B, N)
+        outputs = self.stanet(
+            demand_features=demand_features,
+            temporal_features=temporal_features,
+        )
+        y_hat = outputs.get("y_hat", outputs.get("prediction"))  # (B, N)
+        p_event = outputs.get("p_event", outputs.get("event_prob"))  # (B, N)
+        y_hat_pos = outputs.get("y_hat_pos", outputs.get("magnitude"))  # (B, N)
+        if y_hat is None or p_event is None or y_hat_pos is None:
+            raise KeyError("Model outputs must include y_hat/p_event/y_hat_pos or their legacy aliases.")
 
         loss = None
-        event_prob = outputs['event_prob']
-        magnitude = outputs['magnitude']
         if labels is not None:
             labels = labels.float()
             event_target = (labels > 0).float()
-
-            event_loss = F.binary_cross_entropy(event_prob, event_target)
+            event_loss = F.binary_cross_entropy(p_event, event_target)
             pos_mask = event_target > 0
             if pos_mask.any():
-                mag_loss = self.magnitude_loss_fn(magnitude[pos_mask], labels[pos_mask])
+                mag_loss = self.magnitude_loss_fn(y_hat_pos[pos_mask], labels[pos_mask])
             else:
-                mag_loss = torch.tensor(0.0, device=logits.device)
-            loss = (1.0 - self.lambda_mag)* event_loss + self.lambda_mag * mag_loss
+                mag_loss = torch.tensor(0.0, device=y_hat.device)
+            loss = (1.0 - self.lambda_mag) * event_loss + self.lambda_mag * mag_loss
 
         return {
-            'loss': loss,
-            'logits': logits,
-            'event_prob': outputs['event_prob'],
-            'magnitude': outputs['magnitude'],
-            'prediction': outputs['prediction'],
+            "loss": loss,
+            "logits": y_hat,
+            "event_prob": p_event,
+            "magnitude": y_hat_pos,
+            "prediction": y_hat,
+            "p_event": p_event,
+            "y_hat_pos": y_hat_pos,
+            "y_hat": y_hat,
         }

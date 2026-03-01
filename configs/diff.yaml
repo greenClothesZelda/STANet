@@ -14,20 +14,21 @@ model:
   POIEncoder:
     num_poi_categories: 3
     activate: true
-  RegeonEncoder:
+  StaticRegionEncoder:
     activate: true
     output_dim: 32
-  TemporalEncoder:
+  TemporalContextEncoder:
     embedding_dim: 16
-  LocalLagEncoder:
+  DynamicDemandEncoder:
     embedding_dim: 17
     delta_max: 24
-  SnapshotGlobalAttn:
+  SnapshotGlobalAttention:
     nhead: 4
-  TemporalStateModule:
+  TemporalStateUpdater:
     GRU_configs:
       num_layers: 2
       dropout: 0.3
+  TemporalWindowAggregator: {}
   PTReLU:
     alpha: 0.7
     n: 5.0

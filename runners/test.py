@@ -16,29 +16,33 @@ def test_loop(trainer, test_dataset, output_dir):
     output = trainer.predict(test_dataset)
 
     preds = output.predictions
-
-    logits, event_prob, magnitude, prediction = preds
-    # log.info(f"Logits shape: {logits.shape}, Event Prob shape: {event_prob.shape}, Magnitude shape: {magnitude.shape}, Prediction shape: {prediction.shape}")
-
     if isinstance(preds, tuple):
-        preds = preds[0]
+        if len(preds) < 4:
+            raise ValueError(f"Expected at least 4 prediction tensors, got {len(preds)}")
+        logits, event_prob, magnitude, prediction = preds[:4]
+    else:
+        prediction = preds
+        logits = prediction
+        event_prob = np.zeros_like(prediction)
+        magnitude = prediction
+
     labels = output.label_ids
 
-    preds = preds.reshape(labels.shape)
+    pred_values = prediction.reshape(labels.shape)
 
     num_nodes = getattr(test_dataset, 'num_nodes', None)
     if num_nodes is None and hasattr(test_dataset, 'dataset'):
         num_nodes = getattr(test_dataset.dataset, 'num_nodes', None)
     if num_nodes is None:
-        num_nodes = preds.shape[1]
+        num_nodes = pred_values.shape[1]
 
-    dist = np.abs(preds - labels)
+    dist = np.abs(pred_values - labels)
     mae = float(np.mean(dist))
     mape = float(np.mean(dist / (labels + 1)) * 100)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     result_df = pd.DataFrame({
-        'predictions': preds.flatten(),
+        'predictions': pred_values.flatten(),
         'labels': labels.flatten(),
         'event_prob': event_prob.flatten(),
         'magnitude': magnitude.flatten(),
@@ -47,7 +51,7 @@ def test_loop(trainer, test_dataset, output_dir):
     result_df.to_csv(result_csv_path, index=False)
 
     visualize_predictions(result_csv_path, num_nodes, output_dir)
-    visualize_strip_chart(preds, labels, output_dir)
+    visualize_strip_chart(pred_values, labels, output_dir)
 
     log.info(f"Test Finished. MAE: {mae:.4f}, MAPE: {mape:.4f}")
 

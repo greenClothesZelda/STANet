@@ -1,8 +1,8 @@
-from regex import B
 import torch.nn as nn
 import torch
 
-class TemporalAggregationModule(nn.Module):
+
+class TemporalWindowAggregator(nn.Module):
     def __init__(self, embedding_dim, **kwargs):
         super().__init__()
         self.gru = nn.GRU(
@@ -15,13 +15,10 @@ class TemporalAggregationModule(nn.Module):
         self.score_fc = nn.Linear(embedding_dim, embedding_dim, bias=False)
         self.value_fc = nn.Linear(embedding_dim, 1, bias=False)
         self.output_dim = embedding_dim
+
     def forward(self, state):
-        '''
-        Docstring for forward
-        
-        :param state: snapshot global attention 모듈의 출력 attn_output (B, N, T, Hidden_Size) 이미 다른 노드에서 영향받는 것이 반영된 상태
-        '''
-        B, N, T, _ = state.size()   
+        """Aggregate hidden states over the temporal window."""
+        B, N, T, _ = state.size()
         state = state.contiguous().view(-1, state.size(2), state.size(3))  # (B*N, T, Hidden_Size)
         gru_out, _ = self.gru(state)  # (B*N, T, Hidden_Size)
         score = self.tanh(self.score_fc(gru_out))  # (B*N, T, Hidden_Size)
@@ -32,3 +29,10 @@ class TemporalAggregationModule(nn.Module):
         aggregated_state = aggregated_state.sum(dim=1)  # (B*N, Hidden_Size)
         aggregated_state = aggregated_state.view(B, N, -1)  # (B, N, Hidden_Size)
         return aggregated_state  # (B, N, Hidden_Size)
+
+
+# Legacy alias kept for backward compatibility.
+TemporalAggregationModule = TemporalWindowAggregator
+
+
+__all__ = ["TemporalWindowAggregator", "TemporalAggregationModule"]

@@ -41,16 +41,29 @@ class EarlyStoppingWithMinEpochs(EarlyStoppingCallback):
         return super().on_evaluate(args, state, control, **kwargs)
 
 
+def _model_block(model_cfg, primary_key, legacy_key=None, default=None):
+    if primary_key in model_cfg:
+        return dict(model_cfg[primary_key])
+    if legacy_key is not None and legacy_key in model_cfg:
+        log.warning(f"Using legacy model config key '{legacy_key}'. Prefer '{primary_key}'.")
+        return dict(model_cfg[legacy_key])
+    if default is not None:
+        return dict(default)
+    raise KeyError(f"Missing required model config block: '{primary_key}'")
+
+
 def build_model(config, dataset, device):
-    num_nodes = dataset.num_nodes
     x_geo = torch.cat(
         [dataset.coordinates, dataset.areas.unsqueeze(1).log1p()], dim=-1).to(device)
-    poi_conf = dict(config.model.POIEncoder)
-    reg_conf = dict(config.model.RegeonEncoder)
-    dyn_conf = dict(config.model.LocalLagEncoder)
-    temp_conf = dict(config.model.TemporalEncoder)
-    tstate_conf = dict(config.model.TemporalStateModule)
-    attn_conf = dict(config.model.SnapshotGlobalAttn)
+    poi_conf = _model_block(config.model, "POIEncoder")
+    static_region_conf = _model_block(config.model, "StaticRegionEncoder", "RegeonEncoder")
+    dynamic_demand_conf = _model_block(config.model, "DynamicDemandEncoder", "LocalLagEncoder")
+    temporal_context_conf = _model_block(config.model, "TemporalContextEncoder", "TemporalEncoder")
+    temporal_state_conf = _model_block(config.model, "TemporalStateUpdater", "TemporalStateModule")
+    snapshot_attn_conf = _model_block(
+        config.model, "SnapshotGlobalAttention", "SnapshotGlobalAttn")
+    temporal_window_conf = _model_block(
+        config.model, "TemporalWindowAggregator", "TemporalAggregationModule", default={})
 
     # Get attention module from config
     attn_name = config.model.attention.name
@@ -67,19 +80,19 @@ def build_model(config, dataset, device):
             **poi_conf,
             'x_poi': dataset.poi.to(device),
         },
-        RegeonEncoder_configs={
-            **reg_conf,
+        StaticRegionEncoder_configs={
+            **static_region_conf,
             'land_composition': dataset.composition.to(device),
             'x_geo': x_geo,
         },
-        TemporalEncoder_configs={**temp_conf},
-        LocalLagEncoder_configs={
-            **dyn_conf,
-            'time_step': config.dataset.time_step,
+        TemporalContextEncoder_configs={**temporal_context_conf},
+        DynamicDemandEncoder_configs={
+            **dynamic_demand_conf,
+            'lag_window': config.dataset.time_step,
         },
-        SnapshotGlobalAttn_configs={**attn_conf},
-        TemporalAggregationModule_configs={},
-        TemporalStateModule_configs={**tstate_conf},
+        SnapshotGlobalAttention_configs={**snapshot_attn_conf},
+        TemporalWindowAggregator_configs={**temporal_window_conf},
+        TemporalStateUpdater_configs={**temporal_state_conf},
         PTReLU_configs=dict(config.model.PTReLU),
         attn_module=attn_module,
         attn_configs=attn_configs,
