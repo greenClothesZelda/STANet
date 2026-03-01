@@ -43,12 +43,17 @@ class STANetForTrainer(nn.Module):
         self,
         demand_features: Dict[str, torch.Tensor],
         temporal_features: Dict[str, torch.Tensor],
+        OD_matrix: Optional[torch.Tensor] = None,
+        od_matrix: Optional[torch.Tensor] = None,
         labels: Optional[torch.Tensor] = None,
         **kwargs: Any,
     ) -> Dict[str, torch.Tensor]:
+        if OD_matrix is None:
+            OD_matrix = od_matrix
         outputs = self.stanet(
             demand_features=demand_features,
             temporal_features=temporal_features,
+            OD_matrix=OD_matrix,
         )
         y_hat = outputs.get("y_hat", outputs.get("prediction"))  # (B, N)
         p_event = outputs.get("p_event", outputs.get("event_prob"))  # (B, N)

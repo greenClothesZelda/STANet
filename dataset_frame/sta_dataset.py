@@ -55,20 +55,28 @@ class STADataset(data.Dataset):
         day_to_idx = {"Mon": 0, "Tue": 1, "Wed": 2,
                       "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
         self.demands = []
+        self.od = []
         days = []
         times = []
         holidays = []
         for series in data["x"]:
             demand = series["demand"]
+            od = series.get("OD", [])
             day = series["day"]
             time = series["time"]
             holiday = series["holiday"]
             self.demands.append(demand)
+            self.od.append(od)
             days.append(day_to_idx[day])
             times.append(time)
             holidays.append(1 if holiday else 0)
-
+        #print(f'od: {self.od}')
         self.demands = torch.tensor(self.demands, dtype=torch.long)
+        self.od_matrix = torch.zeros((len(self.demands), self.num_nodes, self.num_nodes), dtype=torch.float)
+        for i, od_list in enumerate(self.od):
+            for od in od_list:
+                u, v, cnt = od["u"], od["v"], od["cnt"]
+                self.od_matrix[i, u, v] = cnt
         self.temporal_features = {
             "dow": torch.tensor(days, dtype=torch.long),
             "hod": torch.tensor(times, dtype=torch.long),
@@ -136,6 +144,7 @@ class STADataset(data.Dataset):
                 "hour_of_day": hod,
                 "is_holiday": holiday,
             },
+            "OD_matrix": self.od_matrix[idx:idx + self.time_step],  # (T, N, N),
             "labels": self.demands[idx + self.time_step],  # (N,)
         }
 
@@ -152,9 +161,12 @@ def stad_collate_fn(batch):
                          for sample in batch], dim=0)
         for key in batch[0]["temporal_features"]
     }
+    od_matrix = torch.stack([sample["OD_matrix"] for sample in batch], dim=0)
     labels = torch.stack([sample["labels"] for sample in batch], dim=0)
     return {
         "demand_features": demand_features,
         "temporal_features": temporal_features,
+        "OD_matrix": od_matrix,
+        "od_matrix": od_matrix,
         "labels": labels,
     }

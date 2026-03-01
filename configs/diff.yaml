@@ -24,6 +24,9 @@ model:
     delta_max: 24
   SnapshotGlobalAttention:
     nhead: 4
+    use_od_bias: true
+    od_eps: 1e-6
+    lambda_od_init: -2.0
   TemporalStateUpdater:
     GRU_configs:
       num_layers: 2

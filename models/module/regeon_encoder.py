@@ -54,7 +54,7 @@ class StaticRegionEncoder(nn.Module):
         land_dim = land_composition.size(1)
         poi_dim = getattr(self.poi_encoder, "output_dim", poi_encoder_model.num_cats)
         geo_dim = x_geo.size(1)
-        self.output_dim = kwargs.get("output_dim", land_dim + poi_dim + geo_dim)
+        self.output_dim = kwargs.get("output_dim", 32)
         self.output_layer = nn.Linear(land_dim + poi_dim + geo_dim, self.output_dim)
 
     def forward(self):

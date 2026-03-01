@@ -21,7 +21,7 @@ class DifferentialAttention(nn.Module):
         self.lambda_param = nn.Parameter(torch.tensor(lambda_init))
         self.lambda_init = lambda_init
 
-    def forward(self, x, attn_mask=None):
+    def forward(self, x, attn_mask=None, attn_bias=None):
         b, n, _ = x.shape
         h = self.n_heads
         d = self.d_head  # d in pseudocode (Q1, Q2 dimension)
@@ -44,6 +44,19 @@ class DifferentialAttention(nn.Module):
         s = 1.0 / math.sqrt(d)
         attn1 = (q1 @ k1.transpose(-1, -2)) * s
         attn2 = (q2 @ k2.transpose(-1, -2)) * s
+
+        if attn_bias is not None:
+            if attn_bias.dim() == 3:
+                # [b, n, n] -> [b, 1, n, n]
+                attn_bias = attn_bias.unsqueeze(1)
+            elif attn_bias.dim() == 4:
+                # already [b, h|1, n, n]
+                pass
+            else:
+                raise ValueError(f"attn_bias must be 3D or 4D, got shape {tuple(attn_bias.shape)}.")
+            attn_bias = attn_bias.to(dtype=attn1.dtype, device=attn1.device)
+            attn1 = attn1 + attn_bias
+            attn2 = attn2 + attn_bias
 
         if attn_mask is not None:
             # attn_mask should be broadcastable to [b, h, n, n]

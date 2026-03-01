@@ -119,7 +119,9 @@ class STANet(nn.Module):
         # module object to multiple attributes. Double registration causes duplicate
         # state_dict keys and breaks safetensors save.
 
-    def forward(self, demand_features, temporal_features):
+    def forward(self, demand_features, temporal_features, OD_matrix=None, od_matrix=None):
+        if OD_matrix is None:
+            OD_matrix = od_matrix
         u_stat = self.static_region_encoder()  # (N, D_s)
         N, _ = u_stat.size()
 
@@ -138,13 +140,13 @@ class STANet(nn.Module):
             combined_features)  # (B, N, T, embedding_dim)
         state, gru_out, gate = self.temporal_state_updater(
             combined_features)
-        state = self.spatial_module(state)  # (B, N, T, Embedding_Dim)
+        state = self.spatial_module(state, OD=OD_matrix)  # (B, N, T, Embedding_Dim)
         state = self.temporal_window_aggregator(state)  # (B, N, Embedding_Dim)
         p_event = torch.sigmoid(
             self.event_head(state)).squeeze(-1)  # (B, N)
         y_hat_pos = torch.nn.functional.softplus(
             self.magnitude_head(state)).squeeze(-1)  # (B, N)
-        y_hat = p_event * y_hat_pos  # (B, N)
+        y_hat = self.pt_relu(p_event) * y_hat_pos  # (B, N)
         return {
             "event_prob": p_event,
             "magnitude": y_hat_pos,
