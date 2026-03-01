@@ -39,7 +39,9 @@ def test_loop(trainer, test_dataset, output_dir):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     result_df = pd.DataFrame({
         'predictions': preds.flatten(),
-        'labels': labels.flatten()
+        'labels': labels.flatten(),
+        'event_prob': event_prob.flatten(),
+        'magnitude': magnitude.flatten(),
     })
     result_csv_path = Path(output_dir) / 'test_results.csv'
     result_df.to_csv(result_csv_path, index=False)
