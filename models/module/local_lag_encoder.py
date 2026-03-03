@@ -3,17 +3,38 @@ import torch
 
 
 class DynamicDemandEncoder(nn.Module):
-    def __init__(self, lag_window=None, embedding_dim=32, time_step=None, **kwargs):
+    def __init__(
+        self,
+        lag_window=None,
+        embedding_dim=32,
+        time_step=None,
+        demand_embedding_dim=8,
+        max_demand=None,
+        **kwargs,
+    ):
         super().__init__()
         self.activate = kwargs.get("activate", False)
         if lag_window is None:
             lag_window = time_step
         if lag_window is None:
             raise ValueError("lag_window or time_step must be provided.")
+        if max_demand is None:
+            max_demand = kwargs.get("max_demand")
+        if max_demand is None:
+            raise ValueError("max_demand must be provided for demand embedding table.")
+
         self.lag_window = lag_window
+        self.max_demand = int(max_demand)
+        self.demand_embedding_dim = int(demand_embedding_dim)
+        # Demand value embedding table: 0..max_demand
+        self.demand_embedding = nn.Embedding(
+            num_embeddings=self.max_demand + 1,
+            embedding_dim=self.demand_embedding_dim,
+        )
         # Per-time-step dynamic feature projection:
-        # [y_{r,t-k}, m_{r,t-k}, I(y>0), Delta t_last] -> D_d
-        self.dynamic_linear = nn.Linear(4, embedding_dim)
+        # [Embed(y_{r,t-k}), m_{r,t-k}, I(y>0), Delta t_last] -> D_d
+        input_dim = self.demand_embedding_dim + 3
+        self.dynamic_linear = nn.Linear(input_dim, embedding_dim)
         self.embedding_dim = embedding_dim
         self.output_dim = embedding_dim
         self.delta_max = kwargs.get("delta_max", 24)
@@ -41,16 +62,20 @@ class DynamicDemandEncoder(nn.Module):
             raise ValueError(
                 f"y_lag last dim must match lag_window={self.lag_window}, got {demand_values.size(-1)}."
             )
-
-        demand_values = demand_values.float()
+        demand_values = demand_values.long()
+        demand_indices = demand_values.clamp(min=0, max=self.max_demand)
+        demand_embed = self.demand_embedding(demand_indices)  # (B, N, T, E_demand)
+        demand_values_f = demand_values.float()
         mask_values = mask_values.float()
-        sparse_mask = (demand_values > 0).float()
+        sparse_mask = (demand_values_f > 0).float()
         recency_values = torch.clamp(recency_values.float(), max=self.delta_max)
-        recency_per_timestep = recency_values.expand(-1, -1, demand_values.size(-1))
-        dynamic_feat = torch.stack(
-            [demand_values, mask_values, sparse_mask, recency_per_timestep],
+        recency_per_timestep = recency_values.expand(-1, -1, demand_values.size(-1)).unsqueeze(-1)
+        mask_values = mask_values.unsqueeze(-1)
+        sparse_mask = sparse_mask.unsqueeze(-1)
+        dynamic_feat = torch.cat(
+            [demand_embed, mask_values, sparse_mask, recency_per_timestep],
             dim=-1,
-        )  # (B, N, T, 4)
+        )  # (B, N, T, E_demand+3)
         dynamic_feat = self.dynamic_linear(dynamic_feat)  # (B, N, T, D_d)
         return dynamic_feat
 

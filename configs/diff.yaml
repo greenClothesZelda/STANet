@@ -19,8 +19,10 @@ model:
     output_dim: 32
   TemporalContextEncoder:
     embedding_dim: 16
+    weather_input_dim: 4
   DynamicDemandEncoder:
     embedding_dim: 17
+    demand_embedding_dim: 8
     delta_max: 24
   SnapshotGlobalAttention:
     nhead: 4
