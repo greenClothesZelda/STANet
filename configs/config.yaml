@@ -8,7 +8,7 @@ dataset:
   train_ratio: 0.8
 
 model:
-  embedding_dim: 32
+  embedding_dim: 64
   attention:
     name: 'standard'  # 'standard' or 'differential'
   POIEncoder:
@@ -19,16 +19,11 @@ model:
     output_dim: 32
   TemporalContextEncoder:
     embedding_dim: 16
-    weather_input_dim: 4
   DynamicDemandEncoder:
-    embedding_dim: 17
-    demand_embedding_dim: 8
+    embedding_dim: 32
     delta_max: 24
   SnapshotGlobalAttention:
     nhead: 4
-    use_od_bias: true
-    od_eps: 1e-6
-    lambda_od_init: -2.0
   TemporalStateUpdater:
     GRU_configs:
       num_layers: 2

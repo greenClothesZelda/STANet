@@ -122,31 +122,28 @@ class STANet(nn.Module):
     def forward(self, demand_features, temporal_features, OD_matrix=None, od_matrix=None):
         if OD_matrix is None:
             OD_matrix = od_matrix
-        u_stat = self.static_region_encoder()  # (N, D_s)
-        N, _ = u_stat.size()
-
         u_time = self.temporal_context_encoder(**temporal_features)  # (B, T, D_t)
         B, T, _ = u_time.size()
+        u_reg = self.static_region_encoder(u_time)  # (B, N, T, D_r)
+        _, N, _, _ = u_reg.size()
 
         u_dyn = self.dynamic_demand_encoder(**demand_features)  # (B, N, T, D_d)
 
         u_time = u_time.unsqueeze(1).expand(
             B, N, T, self.D_temporal)  # (B, N, T, D_temporal)
-        u_stat = u_stat.unsqueeze(0).unsqueeze(
-            2).expand(B, N, T, self.D_region)  # (B, N, T, D_region)
-        # (B, N, T, D_s + D_t + D_d)
-        combined_features = torch.cat([u_stat, u_time, u_dyn], dim=-1)
+        # (B, N, T, D_r + D_t + D_d)
+        combined_features = torch.cat([u_reg, u_time, u_dyn], dim=-1)
         combined_features = self.initial_linear(
             combined_features)  # (B, N, T, embedding_dim)
         state, gru_out, gate = self.temporal_state_updater(
             combined_features)
-        state = self.spatial_module(state, OD=OD_matrix)  # (B, N, T, Embedding_Dim)
+        state = self.spatial_module(state)  # (B, N, T, Embedding_Dim)
         state = self.temporal_window_aggregator(state)  # (B, N, Embedding_Dim)
         p_event = torch.sigmoid(
             self.event_head(state)).squeeze(-1)  # (B, N)
         y_hat_pos = torch.nn.functional.softplus(
             self.magnitude_head(state)).squeeze(-1)  # (B, N)
-        y_hat = self.pt_relu(p_event) * y_hat_pos  # (B, N)
+        y_hat = p_event * y_hat_pos  # (B, N)
         return {
             "event_prob": p_event,
             "magnitude": y_hat_pos,

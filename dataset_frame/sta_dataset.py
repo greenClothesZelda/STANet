@@ -2,15 +2,11 @@ import torch
 import torch.utils.data as data
 from pathlib import Path
 import json
-import warnings
-
-import pandas as pd
 
 
 class STADataset(data.Dataset):
     def __init__(self, file_name, time_step=8, root=None):
         self.time_step = time_step
-        self.target_column = ['강수량(mm)', '기온(°C)', '습도(%)', '적설(cm)']
         root = Path(root) if root is not None else Path("./data/raw")
         data_path = root / file_name
         with open(data_path, "r") as f:
@@ -76,7 +72,6 @@ class STADataset(data.Dataset):
             holidays.append(1 if holiday else 0)
         #print(f'od: {self.od}')
         self.demands = torch.tensor(self.demands, dtype=torch.long)
-        self.max_demand = int(self.demands.max().item()) if self.demands.numel() > 0 else 0
         self.od_matrix = torch.zeros((len(self.demands), self.num_nodes, self.num_nodes), dtype=torch.float)
         for i, od_list in enumerate(self.od):
             for od in od_list:
@@ -87,7 +82,6 @@ class STADataset(data.Dataset):
             "hod": torch.tensor(times, dtype=torch.long),
             "holiday": torch.tensor(holidays, dtype=torch.long),
         }
-        self.weather_features = self._load_weather_features(root)
         # Legacy aliases kept for backward compatibility.
         self.temporal_features["day_of_week"] = self.temporal_features["dow"]
         self.temporal_features["hour_of_day"] = self.temporal_features["hod"]
@@ -122,38 +116,6 @@ class STADataset(data.Dataset):
         std_area = torch.std(self.areas)
         self.areas = (self.areas - mean_area) / (std_area + eps)
 
-    def _load_weather_features(self, root: Path) -> torch.Tensor:
-        weather_path = root / "meteorological_data.csv"
-        seq_len = len(self.demands)
-        num_cols = len(self.target_column)
-        weather_tensor = torch.zeros((seq_len, num_cols), dtype=torch.float)
-        if not weather_path.exists():
-            warnings.warn(f"Weather file not found: {weather_path}. Using zeros.")
-            return weather_tensor
-
-        try:
-            weather_df = pd.read_csv(weather_path, encoding="cp949")
-        except UnicodeDecodeError:
-            weather_df = pd.read_csv(weather_path, encoding="utf-8")
-
-        weather_df = weather_df.reindex(columns=self.target_column, fill_value=0.0)
-        weather_df = weather_df[self.target_column].apply(pd.to_numeric, errors="coerce").fillna(0.0)
-        weather_values = weather_df.to_numpy(dtype="float32")
-
-        copy_len = min(seq_len, weather_values.shape[0])
-        if copy_len > 0:
-            weather_tensor[:copy_len] = torch.from_numpy(weather_values[:copy_len])
-        if weather_values.shape[0] != seq_len:
-            if weather_values.shape[0] > seq_len:
-                action = f"Truncating weather rows to first {copy_len}."
-            else:
-                action = f"Using {copy_len} rows and zero-padding remaining {seq_len - copy_len} rows."
-            warnings.warn(
-                f"Weather row count ({weather_values.shape[0]}) != demand length ({seq_len}). "
-                f"{action}"
-            )
-        return weather_tensor
-
     def __len__(self):
         return len(self.demands) - self.time_step
 
@@ -164,7 +126,6 @@ class STADataset(data.Dataset):
         dow = self.temporal_features["dow"][idx:idx + self.time_step]
         hod = self.temporal_features["hod"][idx:idx + self.time_step]
         holiday = self.temporal_features["holiday"][idx:idx + self.time_step]
-        weather_features = self.weather_features[idx:idx + self.time_step]
 
         return {
             "demand_features": {
@@ -179,8 +140,6 @@ class STADataset(data.Dataset):
                 "dow": dow,
                 "hod": hod,
                 "holiday": holiday,
-                "weather_features": weather_features,
-                "meteo_features": weather_features,
                 "day_of_week": dow,
                 "hour_of_day": hod,
                 "is_holiday": holiday,

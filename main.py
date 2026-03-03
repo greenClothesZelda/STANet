@@ -73,10 +73,8 @@ def build_model(config, dataset, device):
     # override POI category count with data-driven value
     poi_conf['num_poi_categories'] = dataset.poi.shape[1] if hasattr(
         dataset, 'poi') else poi_conf.get('num_poi_categories', 0)
-    # use data-driven demand vocabulary upper bound for demand embedding table
-    if hasattr(dataset, 'max_demand'):
-        dynamic_demand_conf['max_demand'] = int(dataset.max_demand)
-
+    poi_conf['temporal_dim'] = temporal_context_conf.get(
+        'embedding_dim', poi_conf.get('temporal_dim', 16))
     stanet = STANet(
         embedding_dim=config.model.embedding_dim,
         POIEncoder_configs={

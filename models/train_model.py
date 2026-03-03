@@ -7,18 +7,15 @@ from .sta_net import STANet
 
 
 class DMVSTLoss(nn.Module):
-    def __init__(self, gamma=1.0, eps=1.0, reduction="mean"):
+    def __init__(self, lambda_rel=1.0, reduction="mean"):
         super().__init__()
-        self.gamma = gamma
-        self.eps = eps
+        self.lambda_rel = lambda_rel
         self.reduction = reduction
 
     def forward(self, y_pred, y_true):
         diff = y_true - y_pred
-        term1 = torch.abs(diff)
-        relative_diff = diff / (y_true + self.eps)
-        term2 = torch.abs(relative_diff)
-        loss = term1 + (self.gamma * term2)
+        abs_diff = torch.abs(diff)
+        loss = abs_diff / (1.0 + y_true) + self.lambda_rel * abs_diff
         if self.reduction == "mean":
             loss = loss.mean()
         elif self.reduction == "sum":
@@ -33,9 +30,9 @@ class STANetForTrainer(nn.Module):
         super().__init__()
         self.stanet = stanet
         self.lambda_mag = lambda_mag
+        lambda_rel = kwargs.get("lambda_rel", kwargs.get("gamma", 1.0))
         self.magnitude_loss_fn = DMVSTLoss(
-            gamma=kwargs.get("gamma", 1.0),
-            eps=kwargs.get("eps", 1.0),
+            lambda_rel=lambda_rel,
             reduction=kwargs.get("reduction", "mean"),
         )
 
@@ -71,7 +68,7 @@ class STANetForTrainer(nn.Module):
                 mag_loss = self.magnitude_loss_fn(y_hat_pos[pos_mask], labels[pos_mask])
             else:
                 mag_loss = torch.tensor(0.0, device=y_hat.device)
-            loss = (1.0 - self.lambda_mag) * event_loss + self.lambda_mag * mag_loss
+            loss = event_loss + mag_loss
 
         return {
             "loss": loss,
