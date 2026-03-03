@@ -7,7 +7,7 @@ class TemporalContextEncoder(nn.Module):
         super().__init__()
         self.day_embed = nn.Embedding(7, embedding_dim)
         self.hour_embed = nn.Embedding(24, embedding_dim)
-        self.holiday_embed = nn.Embedding(2, embedding_dim)
+        self.holiday_vector = nn.Parameter(torch.zeros(embedding_dim))
         self.output_dim = embedding_dim
 
     def forward(
@@ -27,7 +27,7 @@ class TemporalContextEncoder(nn.Module):
 
         day_feat = self.day_embed(day_index)
         hour_feat = self.hour_embed(hour_index)
-        holiday_feat = self.holiday_embed(holiday_index)
+        holiday_feat = holiday_index.float().unsqueeze(-1) * self.holiday_vector
         temporal_feat = day_feat + hour_feat + holiday_feat
         return temporal_feat  # (B, T, D_t)
 

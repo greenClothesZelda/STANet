@@ -88,6 +88,7 @@ class STANet(nn.Module):
             self.D_region + self.D_temporal + self.D_dynamic,
             embedding_dim,
         )
+        self.initial_activation = nn.ReLU()
 
         self.temporal_state_updater = TemporalStateUpdater(
             **temporal_state_updater_configs,
@@ -114,11 +115,6 @@ class STANet(nn.Module):
             n=pt_relu_configs.get("n", 5.0),
         )
 
-        # NOTE:
-        # Keep legacy names as property aliases below instead of assigning the same
-        # module object to multiple attributes. Double registration causes duplicate
-        # state_dict keys and breaks safetensors save.
-
     def forward(self, demand_features, temporal_features, OD_matrix=None, od_matrix=None):
         if OD_matrix is None:
             OD_matrix = od_matrix
@@ -133,12 +129,27 @@ class STANet(nn.Module):
             B, N, T, self.D_temporal)  # (B, N, T, D_temporal)
         # (B, N, T, D_r + D_t + D_d)
         combined_features = torch.cat([u_reg, u_time, u_dyn], dim=-1)
-        combined_features = self.initial_linear(
-            combined_features)  # (B, N, T, embedding_dim)
-        state, gru_out, gate = self.temporal_state_updater(
-            combined_features)
-        state = self.spatial_module(state)  # (B, N, T, Embedding_Dim)
-        state = self.temporal_window_aggregator(state)  # (B, N, Embedding_Dim)
+        e_seq = self.initial_activation(
+            self.initial_linear(combined_features)
+        )  # (B, N, T, embedding_dim)
+
+        h_prev = self.temporal_state_updater.init_hidden(
+            batch_size=B,
+            num_nodes=N,
+            device=e_seq.device,
+            dtype=e_seq.dtype,
+        )
+        h_seq = []
+        for t in range(T):
+            e_t = e_seq[:, :, t, :]  # (B, N, D)
+            h_prev_top = h_prev[-1].reshape(B, N, self.embedding_dim)
+            s_t, _ = self.temporal_state_updater.gated_fusion(e_t, h_prev_top)  # (B, N, D)
+            z_t = self.spatial_module(s_t)  # (B, N, D), includes residual + layer norm
+            h_prev, h_t = self.temporal_state_updater.gru_update(z_t, h_prev)  # (L, B*N, D), (B, N, D)
+            h_seq.append(h_t)
+
+        h_seq = torch.stack(h_seq, dim=2)  # (B, N, T, D)
+        state = self.temporal_window_aggregator(h_seq)  # (B, N, D)
         p_event = torch.sigmoid(
             self.event_head(state)).squeeze(-1)  # (B, N)
         y_hat_pos = torch.nn.functional.softplus(

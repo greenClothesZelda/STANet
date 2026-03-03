@@ -16,9 +16,7 @@ class DMVSTLoss(nn.Module):
         diff = y_true - y_pred
         abs_diff = torch.abs(diff)
         loss = abs_diff / (1.0 + y_true) + self.lambda_rel * abs_diff
-        if self.reduction == "mean":
-            loss = loss.mean()
-        elif self.reduction == "sum":
+        if self.reduction == "sum":
             loss = loss.sum()
         return loss
 
@@ -62,12 +60,10 @@ class STANetForTrainer(nn.Module):
         if labels is not None:
             labels = labels.float()
             event_target = (labels > 0).float()
-            event_loss = F.binary_cross_entropy(p_event, event_target)
-            pos_mask = event_target > 0
-            if pos_mask.any():
-                mag_loss = self.magnitude_loss_fn(y_hat_pos[pos_mask], labels[pos_mask])
-            else:
-                mag_loss = torch.tensor(0.0, device=y_hat.device)
+            event_loss = F.binary_cross_entropy(
+                p_event, event_target, reduction="none").sum(dim=-1).mean()
+            mag_term = self.magnitude_loss_fn(y_hat_pos, labels)
+            mag_loss = (event_target * mag_term).sum(dim=-1).mean()
             loss = event_loss + mag_loss
 
         return {

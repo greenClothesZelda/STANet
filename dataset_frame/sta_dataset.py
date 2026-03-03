@@ -88,11 +88,17 @@ class STADataset(data.Dataset):
         self.temporal_features["is_holiday"] = self.temporal_features["holiday"]
 
         self.delta_t_last = torch.zeros_like(self.demands, dtype=torch.float)
+        if self.demands.size(0) > 0:
+            self.delta_t_last[0] = torch.where(
+                self.demands[0] > 0,
+                torch.zeros_like(self.delta_t_last[0]),
+                torch.ones_like(self.delta_t_last[0]),
+            )
         for i in range(1, self.demands.size(0)):
             self.delta_t_last[i] = torch.where(
-                self.demands[i - 1] == 0,
-                self.delta_t_last[i - 1] + 1,
+                self.demands[i] > 0,
                 torch.zeros_like(self.delta_t_last[i - 1]),
+                self.delta_t_last[i - 1] + 1,
             )
         self.deactivation_period = self.delta_t_last
 
@@ -120,9 +126,18 @@ class STADataset(data.Dataset):
         return len(self.demands) - self.time_step
 
     def __getitem__(self, idx):
-        delta_t_last = self.delta_t_last[idx + self.time_step - 1].unsqueeze(1)
-        y_lag = self.demands[idx:idx + self.time_step].transpose(0, 1)
-        m_lag = torch.ones_like(y_lag)
+        delta_t_last = self.delta_t_last[idx:idx + self.time_step].transpose(0, 1)  # (N, T)
+        demand_series = self.demands[idx:idx + self.time_step].transpose(0, 1)  # (N, T)
+        valid_mask = torch.ones_like(demand_series)
+
+        lag_offsets = torch.arange(self.time_step - 1, -1, -1)
+        time_index = torch.arange(idx, idx + self.time_step).unsqueeze(1) - lag_offsets.unsqueeze(0)  # (T, L)
+        valid_lag_mask = (time_index >= 0).long()  # (T, L)
+        time_index = time_index.clamp(min=0)
+        lag_values = self.demands[time_index]  # (T, L, N)
+        lag_values = lag_values * valid_lag_mask.unsqueeze(-1)
+        y_lag = lag_values.permute(2, 0, 1).contiguous()  # (N, T, L)
+        m_lag = valid_lag_mask.unsqueeze(0).expand(self.num_nodes, -1, -1).contiguous()  # (N, T, L)
         dow = self.temporal_features["dow"][idx:idx + self.time_step]
         hod = self.temporal_features["hod"][idx:idx + self.time_step]
         holiday = self.temporal_features["holiday"][idx:idx + self.time_step]
@@ -133,8 +148,8 @@ class STADataset(data.Dataset):
                 "y_lag": y_lag,
                 "m_lag": m_lag,
                 "deactivation_period": delta_t_last,
-                "demand_series": y_lag,
-                "valid_mask": m_lag,
+                "demand_series": demand_series,
+                "valid_mask": valid_mask,
             },
             "temporal_features": {
                 "dow": dow,

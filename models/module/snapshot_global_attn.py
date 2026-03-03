@@ -23,18 +23,25 @@ class SnapshotGlobalAttention(nn.Module):
             embedding_dim, eps=kwargs.get("layer_norm_eps", 1e-5))
         self.output_dim = embedding_dim
 
+    def _apply_snapshot_attention(self, snapshot_state):
+        """Apply spatial attention to a single snapshot (B, N, D)."""
+        attn_output = self.attn(snapshot_state)  # (B, N, D)
+        return self.layer_norm(attn_output + snapshot_state)  # (B, N, D)
+
+    def forward_snapshot(self, snapshot_state, OD=None):
+        # OD is intentionally unused in model2-1.pdf formulation.
+        return self._apply_snapshot_attention(snapshot_state)
+
     def forward(self, state, OD=None):
         """Apply attention over regions for each snapshot t."""
-        B, N, T, D = state.size()
-        state_reshaped = state.permute(0, 2, 1, 3).reshape(B * T, N, D)
-        attn_output = self.attn(state_reshaped)  # (B*T, N, D)
+        if state.dim() == 3:
+            return self.forward_snapshot(state, OD=OD)
 
-        attn_output = self.layer_norm(
-            attn_output + state_reshaped)  # (B*T, N, D)
-
-        attn_output = attn_output.view(
-            B, T, N, D).permute(0, 2, 1, 3)  # (B, N, T, D)
-        return attn_output
+        B, N, T, _ = state.size()
+        outputs = []
+        for t in range(T):
+            outputs.append(self.forward_snapshot(state[:, :, t, :], OD=None))
+        return torch.stack(outputs, dim=2)  # (B, N, T, D)
 
 
 # Legacy alias kept for backward compatibility.
