@@ -4,7 +4,7 @@ device: cuda
 
 dataset:
   file_name: graph_data.json
-  time_step: 7
+  time_step: 8
   train_ratio: 0.8
   use_weather: false
   weather_file: meteorological_data.csv

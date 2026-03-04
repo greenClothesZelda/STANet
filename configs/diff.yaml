@@ -4,7 +4,7 @@ device: cuda
 
 dataset:
   file_name: graph_data.json
-  time_step: 7
+  time_step: 8
   train_ratio: 0.8
   use_weather: false
   weather_file: meteorological_data.csv
@@ -27,6 +27,7 @@ model:
   DynamicDemandEncoder:
     embedding_dim: 32
     delta_max: 24
+    lag_window: 168
     use_near_demand: false
   SnapshotGlobalAttention:
     nhead: 4

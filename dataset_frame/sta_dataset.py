@@ -10,13 +10,21 @@ class STADataset(data.Dataset):
         self,
         file_name,
         time_step=8,
+        lag_window=None,
         root=None,
         use_weather=False,
         weather_file="meteorological_data.csv",
         weather_encoding="cp949",
         weather_target_columns=None,
     ):
-        self.time_step = time_step
+        self.time_step = int(time_step)
+        if self.time_step <= 0:
+            raise ValueError(f"time_step must be positive, got {self.time_step}.")
+        if lag_window is None:
+            lag_window = self.time_step
+        self.lag_window = int(lag_window)
+        if self.lag_window <= 0:
+            raise ValueError(f"lag_window must be positive, got {self.lag_window}.")
         root = Path(root) if root is not None else Path("./data/raw")
         data_path = root / file_name
         if weather_target_columns is None:
@@ -183,7 +191,7 @@ class STADataset(data.Dataset):
         near_demand_series = self.near_demands[idx:idx + self.time_step].transpose(0, 1)  # (N, T)
         valid_mask = torch.ones_like(demand_series)
 
-        lag_offsets = torch.arange(self.time_step - 1, -1, -1)
+        lag_offsets = torch.arange(self.lag_window - 1, -1, -1)
         time_index = torch.arange(idx, idx + self.time_step).unsqueeze(1) - lag_offsets.unsqueeze(0)  # (T, L)
         valid_lag_mask = (time_index >= 0).long()  # (T, L)
         time_index = time_index.clamp(min=0)
