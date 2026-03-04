@@ -91,7 +91,8 @@ def build_model(config, dataset, device):
         },
         TemporalContextEncoder_configs={**temporal_context_conf},
         DynamicDemandEncoder_configs={
-            **dynamic_demand_conf
+            **dynamic_demand_conf,
+            'lag_window': config.dataset.time_step,
         },
         SnapshotGlobalAttention_configs={**snapshot_attn_conf},
         TemporalWindowAggregator_configs={**temporal_window_conf},
@@ -121,18 +122,10 @@ def run(config):
 
     orig_cwd = Path(get_original_cwd())
     data_root = orig_cwd / "data" / "raw"
-    dynamic_demand_conf = _model_block(
-        config.model,
-        "DynamicDemandEncoder",
-        "LocalLagEncoder",
-        default={},
-    )
-    lag_window = dynamic_demand_conf.get("lag_window", config.dataset.time_step)
 
     dataset = STADataset(
         file_name=config.dataset.file_name,
         time_step=config.dataset.time_step,
-        lag_window=lag_window,
         root=data_root,
         use_weather=config.dataset.get("use_weather", False),
         weather_file=config.dataset.get("weather_file", "meteorological_data.csv"),
