@@ -40,6 +40,20 @@ def test_loop(trainer, test_dataset, output_dir):
     mae = float(np.mean(dist))
     mape = float(np.mean(dist / (labels + 1)) * 100)
     zero_base_mape = float(np.mean(labels / (labels + 1)) * 100)
+    nonzero_mask = labels > 0
+    if np.any(nonzero_mask):
+        mape_nonzero = float(
+            np.mean(np.abs(pred_values[nonzero_mask] - labels[nonzero_mask]) / labels[nonzero_mask]) * 100
+        )
+    else:
+        mape_nonzero = float("nan")
+
+    rounded_pred = np.rint(np.clip(pred_values, a_min=0.0, a_max=None))
+    zero_mask = labels == 0
+    if np.any(zero_mask):
+        zero_recall = float(np.mean(rounded_pred[zero_mask] == 0))
+    else:
+        zero_recall = float("nan")
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     result_df = pd.DataFrame({
@@ -54,7 +68,10 @@ def test_loop(trainer, test_dataset, output_dir):
     visualize_predictions(result_csv_path, num_nodes, output_dir)
     visualize_strip_chart(pred_values, labels, output_dir)
 
-    log.info(f"Test Finished. MAE: {mae:.4f}, MAPE: {mape:.4f}")
+    log.info(
+        f"Test Finished. MAE: {mae:.4f}, MAPE: {mape:.4f}, "
+        f"MAPE_nonzero: {mape_nonzero:.4f}, ZeroRecall: {zero_recall:.4f}"
+    )
 
     event_target = (labels > 0)
     event_acc = {}
@@ -64,7 +81,13 @@ def test_loop(trainer, test_dataset, output_dir):
         acc = correct.mean()
         event_acc[f'acc@{thresh}'] = acc
     log.info(f"Event Acc: {event_acc}")
-    return {'MAE': mae, 'MAPE': mape, 'Zero_Base_MAPE': zero_base_mape}  # 'event_acc': event_acc}
+    return {
+        'MAE': mae,
+        'MAPE': mape,
+        'MAPE_nonzero': mape_nonzero,
+        'Zero_Recall': zero_recall,
+        'Zero_Base_MAPE': zero_base_mape,
+    }  # 'event_acc': event_acc}
 
 
 def visualize_predictions(csv_path, num_nodes, output_dir):

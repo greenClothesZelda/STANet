@@ -114,6 +114,12 @@ class STANet(nn.Module):
             alpha=pt_relu_configs.get("alpha", 0.5),
             n=pt_relu_configs.get("n", 5.0),
         )
+        self.use_pt_relu = bool(
+            pt_relu_configs.get(
+                "use",
+                pt_relu_configs.get("enable", True),
+            )
+        )
 
     def forward(self, demand_features, temporal_features, OD_matrix=None, od_matrix=None):
         if OD_matrix is None:
@@ -154,7 +160,8 @@ class STANet(nn.Module):
             self.event_head(state)).squeeze(-1)  # (B, N)
         y_hat_pos = torch.nn.functional.softplus(
             self.magnitude_head(state)).squeeze(-1)  # (B, N)
-        y_hat = self.pt_relu(p_event) * y_hat_pos  # (B, N)
+        event_gate = self.pt_relu(p_event) if self.use_pt_relu else p_event
+        y_hat = event_gate * y_hat_pos  # (B, N)
         return {
             "event_prob": p_event,
             "magnitude": y_hat_pos,

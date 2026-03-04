@@ -36,6 +36,7 @@ model:
       dropout: 0.3
   TemporalWindowAggregator: {}
   PTReLU:
+    use: false
     alpha: 0.7
     n: 5.0
 
