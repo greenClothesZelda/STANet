@@ -2,13 +2,28 @@ import torch
 import torch.utils.data as data
 from pathlib import Path
 import json
+import pandas as pd
 
 
 class STADataset(data.Dataset):
-    def __init__(self, file_name, time_step=8, root=None):
+    def __init__(
+        self,
+        file_name,
+        time_step=8,
+        root=None,
+        use_weather=False,
+        weather_file="meteorological_data.csv",
+        weather_encoding="cp949",
+        weather_target_columns=None,
+    ):
         self.time_step = time_step
         root = Path(root) if root is not None else Path("./data/raw")
         data_path = root / file_name
+        if weather_target_columns is None:
+            weather_target_columns = ["강수량(mm)", "기온(°C)", "습도(%)", "적설(cm)"]
+        self.use_weather = use_weather
+        self.weather_dim = 0
+        self.weather_features = None
         with open(data_path, "r") as f:
             data = json.load(f)
         self.num_nodes = len(data["nodes"])
@@ -55,23 +70,33 @@ class STADataset(data.Dataset):
         day_to_idx = {"Mon": 0, "Tue": 1, "Wed": 2,
                       "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
         self.demands = []
+        self.near_demands = []
         self.od = []
         days = []
         times = []
         holidays = []
         for series in data["x"]:
             demand = series["demand"]
+            near_demand = series.get("near_demands")
+            if near_demand is None:
+                near_demand = [0] * len(demand)
+            if len(near_demand) != len(demand):
+                raise ValueError(
+                    "near_demands length must match demand length for each timestamp."
+                )
             od = series.get("OD", [])
             day = series["day"]
             time = series["time"]
             holiday = series["holiday"]
             self.demands.append(demand)
+            self.near_demands.append(near_demand)
             self.od.append(od)
             days.append(day_to_idx[day])
             times.append(time)
             holidays.append(1 if holiday else 0)
         #print(f'od: {self.od}')
         self.demands = torch.tensor(self.demands, dtype=torch.long)
+        self.near_demands = torch.tensor(self.near_demands, dtype=torch.long)
         self.od_matrix = torch.zeros((len(self.demands), self.num_nodes, self.num_nodes), dtype=torch.float)
         for i, od_list in enumerate(self.od):
             for od in od_list:
@@ -86,6 +111,33 @@ class STADataset(data.Dataset):
         self.temporal_features["day_of_week"] = self.temporal_features["dow"]
         self.temporal_features["hour_of_day"] = self.temporal_features["hod"]
         self.temporal_features["is_holiday"] = self.temporal_features["holiday"]
+        if self.use_weather:
+            weather_path = root / weather_file
+            weather_df = pd.read_csv(weather_path, encoding=weather_encoding)
+            missing_cols = [
+                col for col in weather_target_columns if col not in weather_df.columns
+            ]
+            if missing_cols:
+                raise KeyError(
+                    f"Missing weather columns in {weather_path}: {missing_cols}"
+                )
+            weather_data = weather_df[list(weather_target_columns)].fillna(0.0)
+            weather_tensor = torch.tensor(
+                weather_data.to_numpy(), dtype=torch.float32
+            )
+            demand_timesteps = self.demands.size(0)
+            if weather_tensor.size(0) < demand_timesteps:
+                pad_len = demand_timesteps - weather_tensor.size(0)
+                pad = torch.zeros((pad_len, weather_tensor.size(1)), dtype=weather_tensor.dtype)
+                weather_tensor = torch.cat([weather_tensor, pad], dim=0)
+            elif weather_tensor.size(0) > demand_timesteps:
+                weather_tensor = weather_tensor[:demand_timesteps]
+
+            weather_mean = weather_tensor.mean(dim=0, keepdim=True)
+            weather_std = weather_tensor.std(dim=0, keepdim=True)
+            weather_tensor = (weather_tensor - weather_mean) / (weather_std + 1e-6)
+            self.weather_features = weather_tensor
+            self.weather_dim = weather_tensor.size(1)
 
         self.delta_t_last = torch.zeros_like(self.demands, dtype=torch.float)
         if self.demands.size(0) > 0:
@@ -128,6 +180,7 @@ class STADataset(data.Dataset):
     def __getitem__(self, idx):
         delta_t_last = self.delta_t_last[idx:idx + self.time_step].transpose(0, 1)  # (N, T)
         demand_series = self.demands[idx:idx + self.time_step].transpose(0, 1)  # (N, T)
+        near_demand_series = self.near_demands[idx:idx + self.time_step].transpose(0, 1)  # (N, T)
         valid_mask = torch.ones_like(demand_series)
 
         lag_offsets = torch.arange(self.time_step - 1, -1, -1)
@@ -137,28 +190,41 @@ class STADataset(data.Dataset):
         lag_values = self.demands[time_index]  # (T, L, N)
         lag_values = lag_values * valid_lag_mask.unsqueeze(-1)
         y_lag = lag_values.permute(2, 0, 1).contiguous()  # (N, T, L)
+        near_lag_values = self.near_demands[time_index]  # (T, L, N)
+        near_lag_values = near_lag_values * valid_lag_mask.unsqueeze(-1)
+        near_y_lag = near_lag_values.permute(2, 0, 1).contiguous()  # (N, T, L)
         m_lag = valid_lag_mask.unsqueeze(0).expand(self.num_nodes, -1, -1).contiguous()  # (N, T, L)
         dow = self.temporal_features["dow"][idx:idx + self.time_step]
         hod = self.temporal_features["hod"][idx:idx + self.time_step]
         holiday = self.temporal_features["holiday"][idx:idx + self.time_step]
+        weather = None
+        if self.weather_features is not None:
+            weather = self.weather_features[idx:idx + self.time_step]  # (T, C_w)
+
+        demand_features = {
+            "delta_t_last": delta_t_last,
+            "y_lag": y_lag,
+            "m_lag": m_lag,
+            "near_y_lag": near_y_lag,
+            "deactivation_period": delta_t_last,
+            "demand_series": demand_series,
+            "near_demand_series": near_demand_series,
+            "valid_mask": valid_mask,
+        }
+        temporal_features = {
+            "dow": dow,
+            "hod": hod,
+            "holiday": holiday,
+            "day_of_week": dow,
+            "hour_of_day": hod,
+            "is_holiday": holiday,
+        }
+        if weather is not None:
+            temporal_features["weather"] = weather
 
         return {
-            "demand_features": {
-                "delta_t_last": delta_t_last,
-                "y_lag": y_lag,
-                "m_lag": m_lag,
-                "deactivation_period": delta_t_last,
-                "demand_series": demand_series,
-                "valid_mask": valid_mask,
-            },
-            "temporal_features": {
-                "dow": dow,
-                "hod": hod,
-                "holiday": holiday,
-                "day_of_week": dow,
-                "hour_of_day": hod,
-                "is_holiday": holiday,
-            },
+            "demand_features": demand_features,
+            "temporal_features": temporal_features,
             "OD_matrix": self.od_matrix[idx:idx + self.time_step],  # (T, N, N),
             "labels": self.demands[idx + self.time_step],  # (N,)
         }

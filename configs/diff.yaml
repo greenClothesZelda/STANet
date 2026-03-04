@@ -6,6 +6,10 @@ dataset:
   file_name: graph_data.json
   time_step: 7
   train_ratio: 0.8
+  use_weather: false
+  weather_file: meteorological_data.csv
+  weather_encoding: cp949
+  weather_target_columns: ['강수량(mm)', '기온(°C)', '습도(%)', '적설(cm)']
 
 model:
   embedding_dim: 64
@@ -19,9 +23,11 @@ model:
     output_dim: 32
   TemporalContextEncoder:
     embedding_dim: 16
+    weather_dim: 0
   DynamicDemandEncoder:
     embedding_dim: 32
     delta_max: 24
+    use_near_demand: false
   SnapshotGlobalAttention:
     nhead: 4
   TemporalStateUpdater:

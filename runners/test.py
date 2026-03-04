@@ -39,6 +39,7 @@ def test_loop(trainer, test_dataset, output_dir):
     dist = np.abs(pred_values - labels)
     mae = float(np.mean(dist))
     mape = float(np.mean(dist / (labels + 1)) * 100)
+    zero_base_mape = float(np.mean(labels / (labels + 1)) * 100)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     result_df = pd.DataFrame({
@@ -63,7 +64,7 @@ def test_loop(trainer, test_dataset, output_dir):
         acc = correct.mean()
         event_acc[f'acc@{thresh}'] = acc
     log.info(f"Event Acc: {event_acc}")
-    return {'MAE': mae, 'MAPE': mape, }  # 'event_acc': event_acc}
+    return {'MAE': mae, 'MAPE': mape, 'Zero_Base_MAPE': zero_base_mape}  # 'event_acc': event_acc}
 
 
 def visualize_predictions(csv_path, num_nodes, output_dir):

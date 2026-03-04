@@ -154,7 +154,7 @@ class STANet(nn.Module):
             self.event_head(state)).squeeze(-1)  # (B, N)
         y_hat_pos = torch.nn.functional.softplus(
             self.magnitude_head(state)).squeeze(-1)  # (B, N)
-        y_hat = p_event * y_hat_pos  # (B, N)
+        y_hat = self.pt_relu(p_event) * y_hat_pos  # (B, N)
         return {
             "event_prob": p_event,
             "magnitude": y_hat_pos,

@@ -73,6 +73,9 @@ def build_model(config, dataset, device):
     # override POI category count with data-driven value
     poi_conf['num_poi_categories'] = dataset.poi.shape[1] if hasattr(
         dataset, 'poi') else poi_conf.get('num_poi_categories', 0)
+    temporal_context_conf['weather_dim'] = getattr(
+        dataset, 'weather_dim', temporal_context_conf.get('weather_dim', 0)
+    )
     poi_conf['temporal_dim'] = temporal_context_conf.get(
         'embedding_dim', poi_conf.get('temporal_dim', 16))
     stanet = STANet(
@@ -124,6 +127,13 @@ def run(config):
         file_name=config.dataset.file_name,
         time_step=config.dataset.time_step,
         root=data_root,
+        use_weather=config.dataset.get("use_weather", False),
+        weather_file=config.dataset.get("weather_file", "meteorological_data.csv"),
+        weather_encoding=config.dataset.get("weather_encoding", "cp949"),
+        weather_target_columns=config.dataset.get(
+            "weather_target_columns",
+            ["강수량(mm)", "기온(°C)", "습도(%)", "적설(cm)"],
+        ),
     )
     train_ds, val_ds = split_dataset_sequential(
         dataset, config.dataset.train_ratio)
