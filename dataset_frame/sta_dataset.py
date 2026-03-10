@@ -3,7 +3,8 @@ import torch.utils.data as data
 from pathlib import Path
 import json
 import pandas as pd
-
+import logging
+log = logging.getLogger(__name__)
 
 class STADataset(data.Dataset):
     def __init__(
@@ -27,6 +28,7 @@ class STADataset(data.Dataset):
         with open(data_path, "r") as f:
             data = json.load(f)
         self.num_nodes = len(data["nodes"])
+        log.info(f'num nudes:{self.num_nodes}')
         self.coordinates = [[] for _ in range(self.num_nodes)]
         self.areas = [node["size"] for node in data["nodes"]]
 

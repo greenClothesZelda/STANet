@@ -1,3 +1,5 @@
+from turtle import forward
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,7 +21,6 @@ class DMVSTLoss(nn.Module):
         if self.reduction == "sum":
             loss = loss.sum()
         return loss
-
 
 class STANetForTrainer(nn.Module):
     """Wrapper that adds loss computation for Hugging Face Trainer."""
@@ -63,6 +64,9 @@ class STANetForTrainer(nn.Module):
             event_loss = F.binary_cross_entropy(
                 p_event, event_target, reduction="none").sum(dim=-1).mean()
             mag_term = self.magnitude_loss_fn(y_hat_pos, labels)
+            # print(f'mag_term: {mag_term}')
+            # print(f'event_target: {event_target}')
+            # print(f'actual magterm: {(event_target * mag_term)}')
             mag_loss = (event_target * mag_term).sum(dim=-1).mean()
             loss = event_loss + mag_loss
 

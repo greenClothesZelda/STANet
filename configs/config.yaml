@@ -6,7 +6,7 @@ dataset:
   file_name: graph_data.json
   time_step: 7
   train_ratio: 0.8
-  use_weather: false
+  use_weather: true
   weather_file: meteorological_data.csv
   weather_encoding: cp949
   weather_target_columns: ['강수량(mm)', '기온(°C)', '습도(%)', '적설(cm)']
@@ -27,7 +27,7 @@ model:
   DynamicDemandEncoder:
     embedding_dim: 32
     delta_max: 24
-    use_near_demand: false
+    use_near_demand: true
   SnapshotGlobalAttention:
     nhead: 4
   TemporalStateUpdater:
@@ -38,7 +38,7 @@ model:
   PTReLU:
     use: true
     alpha: 0.7
-    n: 5.0
+    n: 50.0
 
 loss:
   lambda_mag: 0.8

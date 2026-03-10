@@ -169,6 +169,9 @@ def run(config):
 
     result = test_loop(trainer, val_ds, output_dir)
     results.append(result)
+    #train_dataset에서 잘 학습되었는지 확인
+    train_output_dir = Path(output_dir) / "train_statics"
+    test_loop(trainer, train_ds, train_output_dir)
 
 
 if __name__ == "__main__":
